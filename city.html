@@ -6,6 +6,7 @@
         <script type="text/javascript" src="libs/three.js"></script>
         <script type="text/javascript" src="libs/stats.js"></script>
         <script type="text/javascript" src="libs/dat.gui.js"></script>
+        <script type="text/javascript" src="libs/FirstPersonControls.js"></script>
         <style>
             body {
                 margin: 0;
@@ -21,14 +22,19 @@
         <script type="text/javascript">
 
             function init() {
+                var planeSize = 200;
+
                 var stats = initStats();
 
                 var scene = new THREE.Scene();
 
-                var camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 1, 10000);
-                camera.position.y = 400;
-                camera.position.z = 400;
-                camera.position.x = -45 * Math.PI / 180;
+                var axes = new THREE.AxisHelper(200);
+                scene.add(axes);
+
+                var camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 1, 1000);
+                camera.position.y = 5;
+                camera.position.z = 0;
+                camera.position.x = 0;
                 camera.lookAt(new THREE.Vector3(0, 0, 0))
                 scene.add(camera);
 
@@ -37,41 +43,65 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 renderer.shadowMapEnabled = true;
 
+                // 一人称視点でのコントロール
+                var controls, clock;
+                clock = new THREE.Clock();
+                controls = new THREE.FirstPersonControls(camera);
+                controls.constrainVertical = true;
+                controls.movementSpeed = 5;
+                controls.lookSpeed = 0.1;
+                controls.verticalMin = 1.0;
+                controls.verticalMax = 2.0;
+                controls.lon = 0;
+                controls.lat = 0;
+
                 document.getElementById("WebGL-output").appendChild(renderer.domElement);
 
-                var step = 0;
-
-                var controls = new function() {
+                var guiControls = new function() {
+                    this.rotationSpeed = 0.001;
                     this.outputObjects = function() {
                         console.log(scene.children);
                     };
                 };
                 var gui = new dat.GUI();
-                gui.add(controls, 'outputObjects');
+                gui.add(guiControls, 'rotationSpeed', 0, 0.1);
+                gui.add(guiControls, 'outputObjects');
 
-                setupWorld();
+                setupBuilding();
                 render();
 
-                function setupWorld() {
-                    var geo = new THREE.PlaneGeometry(2000, 2000, 40, 40);
-                    var mat = new THREE.MeshPhongMaterial({color: 0x9db3b5, overdraw: true});
+                var directionalLight;
+                function setupBuilding() {
+                    // 地面
+                    var geo = new THREE.PlaneGeometry(planeSize, planeSize);
+                    var mat = new THREE.MeshPhongMaterial({color: 0x9db3b5});
                     var floor = new THREE.Mesh(geo, mat);
                     floor.rotation.x = -0.5 * Math.PI;
                     floor.receiveShadow = true;
                     scene.add(floor);
 
+                    // 建物
                     var geometry = new THREE.BoxGeometry(1, 1, 1);
                     geometry.applyMatrix(new THREE.Matrix4().makeTranslation(0, 0.5, 0));
-                    var material = new THREE.MeshPhongMaterial({color: 0xcccccc, overdraw: true});
+
+                    var material = new THREE.MeshPhongMaterial();
+                    // テクスチャを貼り付ける
+                    var texture = THREE.ImageUtils.loadTexture("textures/building.jpg");
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    material.map = texture;
+                    material.map.repeat.set(2, 6); // テクスチャを繰り返して利用
 
                     var cityGeometry = new THREE.Geometry();
-                    for (var i = 0; i < 300; i++) {
+                    for (var i = 0; i < 150; i++) {
                         var building = new THREE.Mesh(geometry.clone());
-                        building.position.x = Math.floor(Math.random()*200 - 100) * 4;
-                        building.position.z = Math.floor(Math.random()*200 - 100) * 4;
-                        building.scale.x = Math.random()*50 + 10;
-                        building.scale.y = Math.random()*building.scale.x*8 + 8;
+                        building.position.x = Math.floor(Math.random()*planeSize/2 - planeSize/4);
+                        building.position.z = Math.floor(Math.random()*planeSize/2 - planeSize/4);
+                        building.scale.x = Math.random()*5 + 1;
+                        building.scale.y = Math.random()*building.scale.x*5 + 5;
                         building.scale.z = building.scale.x;
+
+                        // 一つのGeometryオブジェクトとしてくっつける
                         building.updateMatrix();
                         cityGeometry.merge(building.geometry, building.matrix);
                     }
@@ -80,25 +110,30 @@
                     city.receiveShadow = true;
                     scene.add(city);
 
-                    var light = new THREE.DirectionalLight(0xffffff, 1);
-                    light.position.set(500, 1500, 1000);
-                    light.castShadow = true;
-                    light.shadowMapWidth = 2048;
-                    light.shadowMapHeight = 2048;
-                    var d = 1000;
-				    light.shadowCameraLeft = d;
-				    light.shadowCameraRight = -d;
-				    light.shadowCameraTop = d;
-				    light.shadowCameraBottom = -d;
-				    light.shadowCameraFar = 2500;
-                    scene.add(light);
+                    var ambientLight = new THREE.AmbientLight(0x505050);
+                    scene.add(ambientLight);
+
+                    var target = new THREE.Object3D();
+                    target.position = new THREE.Vector3(0, 0, 0);
+
+                    directionalLight = new THREE.DirectionalLight(0xcccccc);
+                    directionalLight.position.set(100, 100, 0);
+                    directionalLight.castShadow = true;
+                    directionalLight.target = target;
+                    directionalLight.shadowCameraVisible = true;
+                    scene.add(directionalLight);
                 }
 
+                var step = 0;
+                var rad = planeSize/2;
                 function render() {
                     stats.update();
 
                     requestAnimationFrame(render);
+                    step += guiControls.rotationSpeed;
+                    directionalLight.position.set(rad*Math.cos(step), rad*Math.sin(step), 0);
                     renderer.render(scene, camera);
+                    controls.update(clock.getDelta());
                 }
 
                 function initStats() {
